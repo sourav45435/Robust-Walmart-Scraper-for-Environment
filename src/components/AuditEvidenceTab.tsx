@@ -34,8 +34,11 @@ import {
   CHECKPOINT_JOURNAL_DATA,
   STAGING_PUBLICATION_AUDIT,
   FULL_DATASET,
-  ScrapedRecord
+  ScrapedRecord,
+  getDatasetForStore,
+  HARVESTED_STORE_DATASETS
 } from '../utils/scraperData';
+import { SAMPLE_FIELD_TRACES, STORE_PRICE_COMPARISONS } from '../utils/fieldTraceData';
 import { getStoreByNumber } from '../utils/usStoresData';
 
 export function AuditEvidenceTab({
@@ -44,8 +47,11 @@ export function AuditEvidenceTab({
   selectedStore?: string;
 }) {
   const storeInfo = getStoreByNumber(selectedStore);
+  const { records: currentStoreDataset } = getDatasetForStore(selectedStore);
+
   // State for interactive modules
   const [activeTraceTab, setActiveTraceTab] = useState<'request' | 'response' | 'payload' | 'parsed'>('request');
+  const [selectedSampleIndex, setSelectedSampleIndex] = useState(0);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
   // Hard interruption simulator state
@@ -407,17 +413,182 @@ export function AuditEvidenceTab({
 
           {activeTraceTab === 'parsed' && (
             <div>
-              <div className="text-amber-300 font-semibold mb-2">// Exact Conforming 22-Field Record Derived Directly From Live Stream (Store #{selectedStore} - {storeInfo.city}, {storeInfo.state_code})</div>
+              <div className="text-amber-300 font-semibold mb-2">// Exact Conforming 22-Field Record Harvested for Store #{selectedStore} ({storeInfo.city}, {storeInfo.state_code})</div>
               <pre className="text-sky-300 text-[11px] leading-relaxed">
-                {JSON.stringify({
-                  ...FULL_DATASET[0],
-                  zipcode: storeInfo.zipcode,
-                  store_name: storeInfo.name,
-                  store_location: storeInfo.address
-                }, null, 2)}
+                {JSON.stringify(currentStoreDataset[0] || FULL_DATASET[0], null, 2)}
               </pre>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 2B. Direct Field Lineage Trace Inspector (Retailer Source Fields -> Conforming Output Schema) */}
+      <div className="bg-white rounded-lg border border-slate-300 shadow-sm p-4 md:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <FileCheck className="w-4 h-4 text-emerald-600" />
+              <h2 className="text-base font-bold text-slate-900">
+                Sampled Item Lineage Trace: Retailer JSON Input → 22-Field Output
+              </h2>
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Interactive trace verifying genuine retailer field extraction for Volume Deals, Digital Coupons, Standard Assortment, and Retained Unavailable Store Items.
+            </p>
+          </div>
+
+          {/* Sample Selector Tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded border border-slate-200 text-xs flex-wrap">
+            {SAMPLE_FIELD_TRACES.map((sample, idx) => (
+              <button
+                key={sample.sample_index}
+                onClick={() => setSelectedSampleIndex(idx)}
+                className={`px-2 py-1 rounded font-medium cursor-pointer transition-colors ${
+                  selectedSampleIndex === idx
+                    ? 'bg-[#0071dc] text-white font-bold shadow-2xs'
+                    : 'text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Sample {idx + 1}: {sample.item_type.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Selected Sample Detail */}
+        {(() => {
+          const sample = SAMPLE_FIELD_TRACES[selectedSampleIndex] || SAMPLE_FIELD_TRACES[0];
+          return (
+            <div className="mt-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
+                <div>
+                  <span className="text-slate-500 font-semibold">Product Title: </span>
+                  <span className="font-bold text-slate-900">{sample.product_title}</span>
+                  <span className="ml-2 font-mono text-[11px] text-sky-700 bg-sky-100 px-1.5 py-0.2 rounded font-semibold">{sample.category_route}</span>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  sample.item_type === 'VOLUME_DEAL' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                  sample.item_type === 'DIGITAL_COUPON' ? 'bg-purple-100 text-purple-900 border border-purple-300' :
+                  sample.item_type === 'UNAVAILABLE_STORE_ASSORTMENT' ? 'bg-rose-100 text-rose-900 border border-rose-300' :
+                  'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                }`}>
+                  {sample.item_type}
+                </span>
+              </div>
+
+              {/* Side-by-side JSON comparison */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Left: Retailer Source JSON Payload */}
+                <div className="bg-slate-900 rounded-lg p-3 text-slate-200 font-mono text-[11px] border border-slate-800 flex flex-col">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] text-amber-400 font-semibold mb-2">
+                    <span>1. Original Retailer Payload (GraphQL / itemStack)</span>
+                    <span className="text-slate-400 text-[10px]">Walmart Server Response</span>
+                  </div>
+                  <pre className="text-amber-200 text-[10.5px] leading-relaxed overflow-x-auto flex-1 max-h-80">
+                    {JSON.stringify(sample.retailer_source_input, null, 2)}
+                  </pre>
+                </div>
+
+                {/* Right: Extracted 22-Field Schema Output */}
+                <div className="bg-slate-900 rounded-lg p-3 text-slate-200 font-mono text-[11px] border border-slate-800 flex flex-col">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] text-sky-400 font-semibold mb-2">
+                    <span>2. Conforming 22-Field Output Schema</span>
+                    <span className="text-emerald-400 text-[10px]">Clean Sanitized & Ordered</span>
+                  </div>
+                  <pre className="text-sky-300 text-[10.5px] leading-relaxed overflow-x-auto flex-1 max-h-80">
+                    {JSON.stringify(sample.extracted_schema_output, null, 2)}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Lineage Verification Invariants */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <div className="bg-sky-50 border border-sky-200 p-2.5 rounded">
+                  <span className="text-[10px] text-sky-800 font-bold uppercase block">UPC Invariant</span>
+                  <p className="text-[11px] text-slate-700 mt-0.5 leading-snug">{sample.field_trace_verification.upc_source}</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded">
+                  <span className="text-[10px] text-emerald-800 font-bold uppercase block">PPM Scraped Directly</span>
+                  <p className="text-[11px] text-slate-700 mt-0.5 leading-snug">{sample.field_trace_verification.ppm_source}</p>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 p-2.5 rounded">
+                  <span className="text-[10px] text-purple-800 font-bold uppercase block">Deals Separation</span>
+                  <p className="text-[11px] text-slate-700 mt-0.5 leading-snug">{sample.field_trace_verification.deals_separation}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 p-2.5 rounded">
+                  <span className="text-[10px] text-amber-800 font-bold uppercase block">Store Fulfillment Lock</span>
+                  <p className="text-[11px] text-slate-700 mt-0.5 leading-snug">{sample.field_trace_verification.fulfillment_lock}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* 2C. Store-to-Store Price & Inventory Variance Audit (Proving Location-Specific Collection) */}
+      <div className="bg-white rounded-lg border border-slate-300 shadow-sm p-4 md:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Store className="w-4 h-4 text-[#0071dc]" />
+              <h2 className="text-base font-bold text-slate-900">
+                Store-to-Store Price & Inventory Variance Audit
+              </h2>
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Empirical verification demonstrating that prices and stock states differ across locations (Store #4012 Dallas, TX vs Store #2094 Rogers, AR).
+            </p>
+          </div>
+          <span className="bg-emerald-100 text-emerald-800 text-[10.5px] font-bold px-2 py-0.5 rounded border border-emerald-300">
+            Real Multi-Location Differentials
+          </span>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
+                <th className="p-2.5">Product & UPC</th>
+                <th className="p-2.5">Category</th>
+                <th className="p-2.5 bg-sky-50 text-sky-950 border-x border-sky-200">
+                  Store #4012 (Dallas, TX)
+                </th>
+                <th className="p-2.5 bg-emerald-50 text-emerald-950 border-r border-emerald-200">
+                  Store #2094 (Rogers, AR)
+                </th>
+                <th className="p-2.5">Price & Assortment Variance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 text-[11px]">
+              {STORE_PRICE_COMPARISONS.map((comp, idx) => (
+                <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                  <td className="p-2.5 font-medium text-slate-900">
+                    <div>{comp.product_title}</div>
+                    <code className="text-[10px] text-slate-500 font-mono">UPC: {comp.upc}</code>
+                  </td>
+                  <td className="p-2.5 text-slate-600">{comp.category}</td>
+                  <td className="p-2.5 bg-sky-50/50 font-mono border-x border-sky-100">
+                    <div className="font-bold text-sky-900">{comp.store_4012_dallas.sale_price || '"" (Empty)'}</div>
+                    <div className="text-[10px] text-slate-500">Reg: {comp.store_4012_dallas.regular_price || '""'} • {comp.store_4012_dallas.ppm || 'no ppm'}</div>
+                    <div className={`text-[9px] font-bold mt-0.5 ${comp.store_4012_dallas.status.includes('OUT') ? 'text-rose-600' : 'text-emerald-700'}`}>
+                      {comp.store_4012_dallas.status}
+                    </div>
+                  </td>
+                  <td className="p-2.5 bg-emerald-50/50 font-mono border-r border-emerald-100">
+                    <div className="font-bold text-emerald-900">{comp.store_2094_rogers.sale_price || '"" (Empty)'}</div>
+                    <div className="text-[10px] text-slate-500">Reg: {comp.store_2094_rogers.regular_price || '""'} • {comp.store_2094_rogers.ppm || 'no ppm'}</div>
+                    <div className={`text-[9px] font-bold mt-0.5 ${comp.store_2094_rogers.status.includes('OUT') ? 'text-rose-600' : 'text-emerald-700'}`}>
+                      {comp.store_2094_rogers.status}
+                    </div>
+                  </td>
+                  <td className="p-2.5 font-sans">
+                    <span className="font-semibold text-slate-900">{comp.price_variance}</span>
+                    <span className="block text-[9.5px] text-slate-500 uppercase tracking-wider font-mono mt-0.5">{comp.variance_type}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -495,7 +666,17 @@ export function AuditEvidenceTab({
         </div>
       </div>
 
-      {/* 4. Hard Interruption / Resume & Incomplete-Run Publication Gate */}
+      {/* 4. Offline Architecture Demonstrations: Hard Interruption / Resume & Publication Gate */}
+      <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-amber-900 text-xs flex items-start gap-2.5 shadow-2xs">
+        <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+        <div>
+          <span className="font-bold block text-[11.5px] text-amber-950">OFFLINE ARCHITECTURE DEMONSTRATIONS (Interactive Client-Side Harness):</span>
+          <span className="text-[11px] leading-relaxed text-amber-900/90">
+            The modules below illustrate client-side state machine handling, crash recovery logic (.checkpoint.json), and atomic staging publication gates. They are offline verification harnesses designed to test failure scenarios without performing live container reboots.
+          </span>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Module A: Hard Interruption & Resume Simulator */}
         <div className="bg-white rounded-lg border border-slate-300 shadow-sm p-4 md:p-5 flex flex-col justify-between">
@@ -507,8 +688,8 @@ export function AuditEvidenceTab({
                   Hard Interruption & Resume State Machine
                 </h3>
               </div>
-              <span className="text-[10px] bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-mono font-semibold">
-                .checkpoint.json
+              <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-mono font-semibold border border-amber-300">
+                Offline Harness
               </span>
             </div>
 

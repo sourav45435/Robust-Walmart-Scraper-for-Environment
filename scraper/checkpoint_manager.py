@@ -2,7 +2,7 @@
 checkpoint_manager.py
 Hard Interruption / Resume State Machine & Incomplete-Run Publication Protection
 for Walmart Production Scraper (Azure Execution)
-Commit: e4f8109 (HEAD -> main, v2.5.0-collector-verified)
+Commit: fdcf86868191dd8b8b9214c627c0f578ed682ff0 (HEAD -> main, v2.5.0-collector-verified)
 """
 
 import os

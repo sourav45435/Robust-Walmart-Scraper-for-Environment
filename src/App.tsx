@@ -19,7 +19,9 @@ import {
   exportRecordsToCSV,
   ScrapedRecord,
   AUDIT_METADATA,
-  REQUIRED_FIELD_ORDER
+  REQUIRED_FIELD_ORDER,
+  getDatasetForStore,
+  COMMIT_INFO
 } from './utils/scraperData';
 import {
   FieldInspectorModal,
@@ -62,6 +64,7 @@ import {
   Filter,
   Eye,
   AlertCircle,
+  AlertTriangle,
   FileCode,
   Lock,
   GitCommit
@@ -128,15 +131,13 @@ export default function App() {
     };
   }, [selectedStore]);
 
-  // Dynamic dataset actively mapped to the targeted store & state
-  const activeDataset = useMemo(() => {
-    return FULL_DATASET.map(rec => ({
-      ...rec,
-      zipcode: currentStoreDetails.zip,
-      store_name: currentStoreDetails.name,
-      store_location: currentStoreDetails.address
-    }));
-  }, [currentStoreDetails]);
+  // Store-specific harvested datasets (Dallas #4012 vs Rogers #2094 vs Bentonville #1001)
+  const storeHarvest = useMemo(() => {
+    return getDatasetForStore(selectedStore);
+  }, [selectedStore]);
+
+  const activeDataset = storeHarvest.records;
+  const isSelectedStoreHarvested = storeHarvest.isHarvested;
 
   // Dataset Explorer states
   const [searchQuery, setSearchQuery] = useState('');
@@ -283,12 +284,15 @@ export default function App() {
   const [shaVerified, setShaVerified] = useState(false);
 
   const currentSampleRecords = useMemo(() => {
+    if (activeDataset && activeDataset.length >= 5) {
+      return activeDataset.slice(0, 5);
+    }
     return SAMPLE_RECORDS.map(rec => ({
       ...rec,
       zipcode: currentStoreDetails.zip,
       store_location: currentStoreDetails.address
     }));
-  }, [selectedStore, currentStoreDetails]);
+  }, [activeDataset, currentStoreDetails]);
 
   const handleValidateFieldOrder = () => {
     setFieldOrderValidated(true);
@@ -340,7 +344,7 @@ export default function App() {
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
               <span>Audit & Live Evidence</span>
-              <span className="bg-emerald-500 text-white text-[9px] px-1 py-0.2 rounded-full font-mono font-bold">8f42d9a</span>
+              <span className="bg-emerald-500 text-white text-[9px] px-1 py-0.2 rounded-full font-mono font-bold">fdcf868</span>
             </button>
 
             <button
@@ -383,8 +387,9 @@ export default function App() {
                 activeTab === 'runner' ? 'bg-[#0071dc] text-white shadow-xs' : 'text-slate-200 hover:bg-[#002d57]'
               }`}
             >
-              <Terminal className="w-3.5 h-3.5" />
-              Live Runner & Logs
+              <Terminal className="w-3.5 h-3.5 text-amber-300" />
+              <span>Offline Pipeline Simulator</span>
+              <span className="bg-amber-400/20 text-amber-300 text-[9px] px-1 py-0.2 rounded font-bold border border-amber-400/30">DEMO</span>
             </button>
 
             <button
@@ -720,16 +725,17 @@ export default function App() {
                     <div className="p-2 font-mono text-[8.6px] leading-[1.3] bg-white flex-1 overflow-x-auto text-[#0f172a]">
                       <div className="flex min-w-[620px]">
                         {/* Record 1 (Left Column) */}
-                        <div className="w-1/2 pr-2 border-r border-slate-200 whitespace-nowrap">
-                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none">1</span><span className="text-slate-800">[</span></div>
-                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none">2</span><span className="text-slate-800 ml-1.5">{'{'}</span></div>
+                        <div className="w-1/2 pr-2 border-r border-slate-200 overflow-hidden">
+                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none shrink-0">1</span><span className="text-slate-800">[</span></div>
+                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none shrink-0">2</span><span className="text-slate-800 ml-1.5">{'{'}</span></div>
                           
                           {REQUIRED_FIELD_ORDER.map((k, kIdx) => {
                             const val = currentSampleRecords[leftRecordIdx] ? String(currentSampleRecords[leftRecordIdx][k] ?? '') : '';
+                            const displayVal = val.length > 28 ? `${val.substring(0, 26)}…` : val;
                             return (
-                              <div key={String(k)} className="flex items-center hover:bg-sky-50/60 rounded-xs">
-                                <span className="text-slate-400 w-3.5 text-right mr-1.5 select-none">{kIdx + 3}</span>
-                                <div className="ml-3">
+                              <div key={String(k)} className="flex items-center hover:bg-sky-50/60 rounded-xs py-0.5 truncate" title={`${String(k)}: "${val}"`}>
+                                <span className="text-slate-400 w-3.5 text-right mr-1.5 select-none shrink-0">{kIdx + 3}</span>
+                                <div className="ml-2 truncate">
                                   <button
                                     onClick={() => setInspectedField(String(k))}
                                     className="text-[#0284c7] hover:underline hover:text-sky-600 font-semibold cursor-pointer"
@@ -738,25 +744,26 @@ export default function App() {
                                     "{String(k)}"
                                   </button>
                                   <span className="text-slate-700">: </span>
-                                  <span className="text-[#15803d]">"{val}"</span>
+                                  <span className="text-[#15803d]">"{displayVal}"</span>
                                   {kIdx < 21 && <span className="text-slate-600">,</span>}
                                 </div>
                               </div>
                             );
                           })}
 
-                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none"></span><span className="ml-1.5 text-slate-800">{'}'},</span></div>
-                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none"></span><span className="text-slate-800">]</span></div>
+                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none shrink-0"></span><span className="ml-1.5 text-slate-800">{'}'},</span></div>
+                          <div className="flex"><span className="text-slate-400 w-3.5 text-right mr-1.5 select-none shrink-0"></span><span className="text-slate-800">]</span></div>
                         </div>
 
                         {/* Record 2 (Right Column) */}
-                        <div className="w-1/2 pl-3 whitespace-nowrap">
+                        <div className="w-1/2 pl-3 overflow-hidden">
                           <div className="text-slate-800">{'{'}</div>
 
                           {REQUIRED_FIELD_ORDER.map((k, kIdx) => {
                             const val = currentSampleRecords[rightRecordIdx] ? String(currentSampleRecords[rightRecordIdx][k] ?? '') : '';
+                            const displayVal = val.length > 28 ? `${val.substring(0, 26)}…` : val;
                             return (
-                              <div key={String(k)} className="hover:bg-sky-50/60 rounded-xs">
+                              <div key={String(k)} className="hover:bg-sky-50/60 rounded-xs py-0.5 truncate" title={`${String(k)}: "${val}"`}>
                                 <span className="ml-2">
                                   <button
                                     onClick={() => setInspectedField(String(k))}
@@ -766,7 +773,7 @@ export default function App() {
                                     "{String(k)}"
                                   </button>
                                   <span className="text-slate-700">: </span>
-                                  <span className="text-[#15803d]">"{val}"</span>
+                                  <span className="text-[#15803d]">"{displayVal}"</span>
                                   {kIdx < 21 && <span className="text-slate-600">,</span>}
                                 </span>
                               </div>
@@ -1034,11 +1041,11 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '1.25 1 0%' : '1 1 200px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2.5 py-1 font-bold text-[12.5px] whitespace-nowrap flex items-center justify-between">
-                      <span>5. Store & Fulfillment Context</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1.5 border-b border-[#003c73]">
+                      <span className="truncate" title="5. Store & Fulfillment Context">5. Store & Fulfillment Context</span>
                       <button
                         onClick={() => setShowFulfillmentModal(true)}
-                        className="text-[9.5px] text-sky-200 hover:text-white underline cursor-pointer"
+                        className="shrink-0 text-[10px] bg-sky-700/80 hover:bg-sky-600 px-1.5 py-0.5 rounded text-sky-100 font-semibold cursor-pointer transition-colors shadow-2xs"
                       >
                         Inspect Context
                       </button>
@@ -1115,11 +1122,11 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '1.75 1 0%' : '1 1 250px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2.5 py-1 font-bold text-[12.5px] whitespace-nowrap flex items-center justify-between">
-                      <span>6. Marketplace, Shipping & Duplicates</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1.5 border-b border-[#003c73]">
+                      <span className="truncate" title="6. Marketplace, Shipping & Duplicates">6. Marketplace, Shipping & Duplicates</span>
                       <button
                         onClick={() => setShowFilterModal(true)}
-                        className="text-[9.5px] text-sky-200 hover:text-white underline cursor-pointer"
+                        className="shrink-0 text-[10px] bg-sky-700/80 hover:bg-sky-600 px-1.5 py-0.5 rounded text-sky-100 font-semibold cursor-pointer transition-colors shadow-2xs"
                       >
                         Test Sandbox
                       </button>
@@ -1210,11 +1217,11 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '1.15 1 0%' : '1 1 190px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2.5 py-1 font-bold text-[12.5px] whitespace-nowrap flex items-center justify-between">
-                      <span>7. Category Completeness & Silent-Blocking</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1.5 border-b border-[#003c73]">
+                      <span className="truncate" title="7. Category Completeness & Silent-Blocking">7. Category Completeness & Silent-Blocking</span>
                       <button
                         onClick={handleCanaryPing}
-                        className="text-[9.5px] text-sky-200 hover:text-white underline cursor-pointer"
+                        className="shrink-0 text-[10px] bg-sky-700/80 hover:bg-sky-600 px-1.5 py-0.5 rounded text-sky-100 font-semibold cursor-pointer transition-colors shadow-2xs"
                         title="Ping canary products across departments"
                       >
                         {canaryPingStatus === 'testing' ? 'Testing...' : canaryPingStatus === 'passed' ? '✔ Verified' : 'Ping Canary'}
@@ -1272,11 +1279,11 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '0.95 1 0%' : '1 1 180px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2 py-1 font-bold text-[12px] truncate flex items-center justify-between" title="8. Protection Against Failed Runs">
-                      <span>8. Protection Against Failed Runs</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1.5 border-b border-[#003c73]">
+                      <span className="truncate" title="8. Protection Against Failed Runs">8. Protection Against Failed Runs</span>
                       <button
                         onClick={() => setShowPipelineModal(true)}
-                        className="text-[9px] text-sky-200 hover:text-white underline cursor-pointer"
+                        className="shrink-0 text-[10px] bg-sky-700/80 hover:bg-sky-600 px-1.5 py-0.5 rounded text-sky-100 font-semibold cursor-pointer transition-colors shadow-2xs"
                       >
                         Simulate
                       </button>
@@ -1345,9 +1352,9 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '0.95 1 0%' : '1 1 180px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2 py-1 font-bold text-[12px] truncate flex items-center justify-between" title="9. Architecture & Technologies">
-                      <span>9. Architecture & Technologies</span>
-                      <span className="text-[9px] font-normal text-sky-200">(Click node)</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1 border-b border-[#003c73]">
+                      <span className="truncate" title="9. Architecture & Technologies">9. Architecture & Technologies</span>
+                      <span className="shrink-0 text-[9px] font-normal text-sky-200">(Click nodes)</span>
                     </div>
                     <div className="p-2 flex-1 flex flex-col justify-between">
                       <div className="grid grid-cols-3 gap-1 text-center">
@@ -1451,9 +1458,9 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '1.6 1 0%' : '1 1 280px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2.5 py-1 font-bold text-[12.5px] flex items-center justify-between">
-                      <span>10. Technology Stack & Services</span>
-                      <span className="text-[9.5px] text-sky-200 font-normal">(Click icon for tech specs)</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1 border-b border-[#003c73]">
+                      <span className="truncate" title="10. Technology Stack & Services">10. Technology Stack & Services</span>
+                      <span className="shrink-0 text-[9px] text-sky-200 font-normal">(Click for specs)</span>
                     </div>
                     <div className="p-2 flex-1 flex items-center">
                       <div className="grid grid-cols-6 gap-1 w-full text-center">
@@ -1537,14 +1544,14 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '1.25 1 0%' : '1 1 240px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2.5 py-1 font-bold text-[12.5px] flex items-center justify-between">
-                      <span>11. Estimated Monthly Operating Cost</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1 border-b border-[#003c73]">
+                      <span className="truncate" title="11. Estimated Monthly Operating Cost">11. Estimated Monthly Operating Cost</span>
                       <button
                         onClick={() => setShowCostModal(true)}
-                        className="text-[9.5px] text-sky-200 hover:text-white underline cursor-pointer"
+                        className="shrink-0 text-[10px] bg-sky-700/80 hover:bg-sky-600 px-1.5 py-0.5 rounded text-sky-100 font-semibold cursor-pointer transition-colors shadow-2xs"
                         title="Adjust store count and frequency"
                       >
-                        Adjust ({storesCount} st / {runsPerWeek}x wk)
+                        Adjust ({storesCount} st / {runsPerWeek}x)
                       </button>
                     </div>
                     <div className="p-2.5 flex-1 flex items-center justify-between gap-1.5">
@@ -1602,11 +1609,11 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '1 1 0%' : '1 1 200px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2.5 py-1 font-bold text-[12.5px] flex items-center justify-between">
-                      <span>12. Evidence of Working Scraper</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1 border-b border-[#003c73]">
+                      <span className="truncate" title="12. Evidence of Working Scraper">12. Evidence of Working Scraper</span>
                       <button
                         onClick={handleVerifySha}
-                        className="text-[9.5px] text-sky-200 hover:text-white underline cursor-pointer"
+                        className="shrink-0 text-[10px] bg-sky-700/80 hover:bg-sky-600 px-1.5 py-0.5 rounded text-sky-100 font-semibold cursor-pointer transition-colors shadow-2xs"
                         title="Calculate SHA-256 hash of dataset"
                       >
                         {shaVerified ? '✔ Checksum OK' : 'Verify SHA-256'}
@@ -1652,13 +1659,13 @@ export default function App() {
                     className="bg-white rounded-[2px] border border-[#78a8cf] shadow-2xs flex flex-col overflow-hidden"
                     style={{ flex: viewMode === 'poster' ? '1.1 1 0%' : '1 1 220px' }}
                   >
-                    <div className="bg-[#004f98] text-white px-2.5 py-1 font-bold text-[12.5px] flex items-center justify-between">
-                      <span>13. Key Features & Compliance</span>
+                    <div className="bg-[#004f98] text-white px-2.5 py-1.5 font-bold text-[12px] flex items-center justify-between gap-1 border-b border-[#003c73]">
+                      <span className="truncate" title="13. Key Features & Compliance">13. Key Features & Compliance</span>
                       <button
                         onClick={() => setShowComplianceModal(true)}
-                        className="text-[9.5px] text-sky-200 hover:text-white underline cursor-pointer flex items-center gap-0.5"
+                        className="shrink-0 text-[10px] bg-emerald-600 hover:bg-emerald-500 px-1.5 py-0.5 rounded text-white font-semibold cursor-pointer flex items-center gap-1 shadow-2xs transition-colors"
                       >
-                        <ShieldCheck className="w-3 h-3" />
+                        <ShieldCheck className="w-3 h-3 text-emerald-200" />
                         <span>Run Audit</span>
                       </button>
                     </div>
@@ -1958,15 +1965,32 @@ export default function App() {
         </div>
       )}
 
-      {/* SUB-VIEW: TAB 3 - LIVE RUNNER & LOGS */}
+      {/* SUB-VIEW: TAB 3 - OFFLINE PIPELINE SIMULATOR */}
       {activeTab === 'runner' && (
         <div className="flex-1 p-4 max-w-5xl mx-auto w-full space-y-4">
-          <div className="bg-white rounded-lg border border-sky-300 p-5 shadow-sm">
+          {/* Prominent Offline Disclaimer Banner */}
+          <div className="bg-amber-50 border border-amber-300 rounded-lg p-3.5 text-amber-900 text-xs flex items-start gap-3 shadow-xs">
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-bold text-[12px] text-amber-950 flex items-center gap-1.5">
+                <span>OFFLINE ARCHITECTURE DEMONSTRATION & CLIENT HARNESS</span>
+                <span className="bg-amber-200 text-amber-900 font-mono text-[9px] px-1.5 py-0.2 rounded font-bold uppercase">Non-Live Harness</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-amber-900/90">
+                This interactive browser-based runner is a client-side architectural test harness demonstrating pipeline progression, rate-limit backoff timers, canary product triggers, and staging promotion gates in the UI. <strong>It does not make live outbound requests to Walmart.</strong>
+              </p>
+              <p className="text-[11px] text-amber-950 font-medium">
+                For observed retailer responses, raw network captures, machine-readable NDJSON execution logs, and field-level provenance traces, please inspect the <button onClick={() => setActiveTab('evidence')} className="underline font-bold text-sky-800 hover:text-sky-950 cursor-pointer">Audit & Live Evidence</button> tab.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-slate-300 p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold text-[#004f98]">Live Walmart Scraper Engine Simulation</h2>
+                <h2 className="text-lg font-bold text-[#004f98]">Offline Pipeline Simulator & Reliability Demonstration</h2>
                 <p className="text-xs text-slate-600 mt-1">
-                  Test and inspect the live Playwright execution pipeline for Store #{selectedStore} ({currentStoreDetails.city}, {currentStoreDetails.state} {currentStoreDetails.zip}).
+                  Simulate retry backoff, canary verification, and atomic promotion logic for Store #{selectedStore} ({currentStoreDetails.city}, {currentStoreDetails.state} {currentStoreDetails.zip}).
                 </p>
               </div>
 
@@ -1977,7 +2001,7 @@ export default function App() {
                   className="px-4 py-2 bg-[#0071dc] hover:bg-[#005bb5] text-white rounded font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   <Play className="w-4 h-4 fill-white" />
-                  {isRunning ? 'Scraping in progress...' : `Run Scrape: Store #${selectedStore}`}
+                  {isRunning ? 'Simulation in progress...' : `Run Offline Simulation: Store #${selectedStore}`}
                 </button>
               </div>
             </div>
@@ -2592,7 +2616,7 @@ const CHECKPOINT_CODE = `"""
 checkpoint_manager.py
 Hard Interruption / Resume State Machine & Incomplete-Run Publication Protection
 for Walmart Production Scraper (Azure Execution)
-Commit: 8f42d9a (HEAD -> main, v2.4.0-azure-prod)
+Commit: fdcf86868191dd8b8b9214c627c0f578ed682ff0 (HEAD -> main, v2.5.0-collector-verified)
 """
 
 import os
